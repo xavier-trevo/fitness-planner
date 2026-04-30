@@ -803,7 +803,7 @@ function App() {
                         onDragOver={e=>{ if(!isRest){e.preventDefault();setDropCell({day,uid:u.id});} }}
                         onDragLeave={handleDragLeave}
                         onDrop={()=>!isRest&&handleDrop(day,u.id)}
-                        style={{padding:'8px',borderRight:ui<users.length-1?'1px solid #F0F2F8':'none',minHeight:86,background:isOver&&!isRest?`${c.main}0D`:undefined,transition:'background 0.12s',display:'flex',flexDirection:'column',gap:4,position:'relative'}}
+                        style={{padding:'8px',paddingBottom:allRest?'8px':'26px',borderRight:ui<users.length-1?'1px solid #F0F2F8':'none',minHeight:86,background:isOver&&!isRest?`${c.main}0D`:undefined,transition:'background 0.12s',display:'flex',flexDirection:'column',gap:4,position:'relative'}}
                       >
                         {isRest ? (
                           <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:4}}>
@@ -824,7 +824,9 @@ function App() {
                                     <div style={{fontSize:12,fontWeight:600,color:c.text,lineHeight:1.3}}>{item.exercise.name}</div>
                                     <div style={{fontSize:10,color:c.text,opacity:0.6,marginTop:1}}>{item.exercise.sets} · {item.exercise.muscle}</div>
                                   </div>
-                                  <button onClick={()=>delItem(day,u.id,idx)} style={{background:'none',border:'none',cursor:'pointer',color:c.text,opacity:0.3,padding:0,fontSize:14,lineHeight:1,flexShrink:0}}>×</button>
+                                  <button
+                                    onClick={e=>{ e.stopPropagation(); delItem(day,u.id,idx); }}
+                                    style={{background:'none',border:'none',cursor:'pointer',color:c.text,opacity:0.4,padding:'0 0 0 4px',fontSize:16,lineHeight:1,flexShrink:0,zIndex:2}}>×</button>
                                 </div>
                                 <div style={{marginTop:5}}>
                                   <WeightBadge uid={u.id} exId={item.exercise.id} weights={weights} setWeights={setWeights} color={c}/>
@@ -839,11 +841,11 @@ function App() {
                             {items.length===0&&!isOver&&<div style={{fontSize:11,color:'#E5E7EB',padding:'4px 2px'}}>—</div>}
                           </>
                         )}
-                        {/* Individual rest toggle */}
+                        {/* Individual rest toggle — bottom of cell, never overlaps cards */}
                         {!allRest&&(
                           <button className="rest-cell-btn" onClick={()=>toggleRest(day,u.id)}
                             title={isRest?'Remove rest day':'Set as rest day for '+u.name}
-                            style={{position:'absolute',top:6,right:6,padding:'2px 6px',borderRadius:5,border:`1px solid ${isRest?'#FCA5A5':'#E5E7EB'}`,background:isRest?'#FEF2F2':'white',color:isRest?'#DC2626':'#9CA3AF',fontSize:9,fontWeight:600,cursor:'pointer'}}>
+                            style={{position:'absolute',bottom:5,right:6,padding:'2px 6px',borderRadius:5,border:`1px solid ${isRest?'#FCA5A5':'#E5E7EB'}`,background:isRest?'#FEF2F2':'white',color:isRest?'#DC2626':'#9CA3AF',fontSize:9,fontWeight:600,cursor:'pointer',zIndex:2}}>
                             {isRest?'✕ rest':'🌙'}
                           </button>
                         )}
