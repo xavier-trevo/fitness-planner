@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GymSync — Couples Workout Planner</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { height: 100%; }
+    body { font-family: 'DM Sans', system-ui, sans-serif; background: #ECEEF5; color: #111827; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-thumb { background: #C8D0E0; border-radius: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    button { font-family: inherit; cursor: pointer; }
+    input, textarea, select { font-family: inherit; outline: none; }
+    input:focus, textarea:focus, select:focus { box-shadow: 0 0 0 3px rgba(37,99,235,0.15); }
+
+    .lib-card:hover  { border-color:#93C5FD !important; background:#EFF6FF !important; }
+    .cat-row         { transition:background 0.12s; cursor:grab; }
+    .cat-row:hover   { background:#EFF6FF !important; }
+    .cat-row:active  { cursor:grabbing; }
+    .ex-card         { transition:transform 0.1s; }
+    .ex-card:active  { transform:scale(0.97); }
+    .row-actions     { opacity:0; transition:opacity 0.15s; }
+    .day-row:hover .row-actions { opacity:1; }
+
+    .sidebar-wrap {
+      transition: width 0.26s cubic-bezier(0.4,0,0.2,1),
+                  min-width 0.26s cubic-bezier(0.4,0,0.2,1);
+      overflow:hidden; flex-shrink:0;
+    }
+    .sidebar-inner {
+      width:222px; display:flex; flex-direction:column;
+      height:100%; border-right:1px solid #E5E7EB; background:#fff;
+    }
+
+    .burger { width:34px; height:34px; border-radius:8px; display:flex; align-items:center; justify-content:center; background:transparent; border:1px solid #E5E7EB; cursor:pointer; flex-shrink:0; transition:background 0.15s, border-color 0.15s; }
+    .burger:hover    { background:#F3F4F6; }
+    .burger.is-open  { background:#EFF6FF; border-color:#BFDBFE; }
+
+    .week-nav-btn { width:28px; height:28px; border-radius:7px; display:flex; align-items:center; justify-content:center; border:1px solid #E5E7EB; background:white; color:#374151; transition:background 0.12s; flex-shrink:0; }
+    .week-nav-btn:hover { background:#F3F4F6; }
+    .week-nav-btn:disabled { opacity:0.35; cursor:default; }
+
+    .weight-input { width:100%; border:none; background:transparent; font-family:inherit; font-size:10px; color:inherit; padding:0; cursor:text; }
+    .weight-input::placeholder { color:rgba(0,0,0,0.25); }
+    .weight-input:focus { outline:none; box-shadow:none; }
+
+    .done-btn { transition:all 0.15s; }
+    .done-btn:hover { transform:scale(1.05); }
+
+    .rest-cell-btn { opacity:0; transition:opacity 0.14s; }
+    .user-cell:hover .rest-cell-btn { opacity:1; }
+
+    .heat-cell { border-radius:3px; transition:transform 0.1s; cursor:default; }
+    .heat-cell:hover { transform:scale(1.3); z-index:1; position:relative; }
+
+    .rest-day-bg { background:repeating-linear-gradient(45deg,#F9FAFB,#F9FAFB 4px,#F3F4F6 4px,#F3F4F6 8px) !important; }
+
+    @keyframes dropPulse { 0%,100%{opacity:.7} 50%{opacity:1} }
+    .drop-active { animation:dropPulse 0.9s ease-in-out infinite; }
+    @keyframes checkPop { 0%{transform:scale(0.8);opacity:0} 60%{transform:scale(1.1)} 100%{transform:scale(1);opacity:1} }
+    .check-pop { animation:checkPop 0.25s ease-out; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useMemo, useRef } = React;
+
+/* ─── Constants ─── */
+const DAYS     = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const DAY_LONG = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+const COLORS = [
+  {main:'#2563EB',bg:'#EFF6FF',text:'#1E40AF',border:'#BFDBFE'},
+  {main:'#DC2626',bg:'#FEF2F2',text:'#991B1B',border:'#FECACA'},
+  {main:'#7C3AED',bg:'#F5F3FF',text:'#5B21B6',border:'#DDD6FE'},
+  {main:'#D97706',bg:'#FFFBEB',text:'#92400E',border:'#FDE68A'},
+  {main:'#059669',bg:'#ECFDF5',text:'#065F46',border:'#A7F3D0'},
+  {main:'#DB2777',bg:'#FDF2F8',text:'#9D174D',border:'#FBCFE8'},
+];
+
+/* ─── Muscle group definitions ─── */
+const MUSCLE_GROUPS = [
+  { label:'Legs',    color:'#7C3AED', bg:'#F5F3FF', keys:['quad','glute','hamstring','calf','hip','thigh','leg','lunge','squat','sumo','abductor','adductor'] },
+  { label:'Push',    color:'#DC2626', bg:'#FEF2F2', keys:['chest','shoulder','delt','press','fly','push','dip','arnold'] },
+  { label:'Pull',    color:'#2563EB', bg:'#EFF6FF', keys:['back','lat','bicep','trap','pull','row','curl','shrug','face'] },
+  { label:'Core',    color:'#D97706', bg:'#FFFBEB', keys:['core','abs','oblique','plank','crunch','twist','raise','dead bug','rollout','climber','ab wheel'] },
+  { label:'Cardio',  color:'#059669', bg:'#ECFDF5', keys:['cardio','cardiovascular','run','bike','rope','burpee','hiit','sled','rowing','walk','interval'] },
+];
+
+const detectGroup = (ex) => {
+  const haystack = `${ex.name} ${ex.muscle}`.toLowerCase();
+  return MUSCLE_GROUPS.filter(g => g.keys.some(k => haystack.includes(k)));
+};
+
+/* ─── Exercise Library ─── */
+const DEFAULT_LIB = {
+  'Legs': [
+    {id:'squat', name:'Barbell Back Squat',   sets:'4×8',    muscle:'Quads / Glutes'},
+    {id:'ftsqt', name:'Front Squat',          sets:'3×8',    muscle:'Quads'},
+    {id:'rdl',   name:'Romanian Deadlift',    sets:'4×10',   muscle:'Hamstrings'},
+    {id:'legp',  name:'Leg Press',            sets:'4×10',   muscle:'Quads'},
+    {id:'lunge', name:'Walking Lunges',       sets:'3×12',   muscle:'Quads / Glutes'},
+    {id:'legcl', name:'Leg Curl',             sets:'3×12',   muscle:'Hamstrings'},
+    {id:'legex', name:'Leg Extension',        sets:'3×12',   muscle:'Quads'},
+    {id:'calf',  name:'Standing Calf Raise',  sets:'4×15',   muscle:'Calves'},
+    {id:'hthrs', name:'Hip Thrust',           sets:'4×12',   muscle:'Glutes'},
+    {id:'abdct', name:'Hip Abductor',         sets:'3×15',   muscle:'Outer Hips'},
+    {id:'addct', name:'Hip Adductor',         sets:'3×15',   muscle:'Inner Thighs'},
+    {id:'sumo',  name:'Sumo Squat',           sets:'4×12',   muscle:'Inner Thighs / Glutes'},
+  ],
+  'Push (Chest & Shoulders)': [
+    {id:'bench', name:'Flat Bench Press',     sets:'4×8',    muscle:'Chest'},
+    {id:'incl',  name:'Incline DB Press',     sets:'3×10',   muscle:'Upper Chest'},
+    {id:'decl',  name:'Decline Press',        sets:'3×10',   muscle:'Lower Chest'},
+    {id:'cfly',  name:'Cable Fly',            sets:'3×12',   muscle:'Chest'},
+    {id:'pshup', name:'Push-Ups',             sets:'3×15',   muscle:'Chest / Triceps'},
+    {id:'dip',   name:'Weighted Dips',        sets:'3×10',   muscle:'Chest / Triceps'},
+    {id:'ohp',   name:'Overhead Press',       sets:'4×8',    muscle:'Shoulders'},
+    {id:'latr',  name:'Lateral Raise',        sets:'3×15',   muscle:'Side Delts'},
+    {id:'frnt',  name:'Front Raise',          sets:'3×12',   muscle:'Front Delts'},
+    {id:'arnld', name:'Arnold Press',         sets:'3×10',   muscle:'Shoulders'},
+  ],
+  'Pull (Back & Biceps)': [
+    {id:'pull',  name:'Pull-Ups',             sets:'4×8',    muscle:'Lats'},
+    {id:'brow',  name:'Barbell Row',          sets:'4×8',    muscle:'Mid Back'},
+    {id:'latpd', name:'Lat Pulldown',         sets:'3×10',   muscle:'Lats'},
+    {id:'srow',  name:'Seated Cable Row',     sets:'3×10',   muscle:'Mid Back'},
+    {id:'fpull', name:'Face Pull',            sets:'3×15',   muscle:'Rear Delts'},
+    {id:'shrg',  name:'Barbell Shrug',        sets:'3×12',   muscle:'Traps'},
+    {id:'bcrl',  name:'Barbell Curl',         sets:'3×10',   muscle:'Biceps'},
+    {id:'hamm',  name:'Hammer Curl',          sets:'3×12',   muscle:'Biceps / Brachialis'},
+    {id:'prch',  name:'Preacher Curl',        sets:'3×12',   muscle:'Biceps'},
+    {id:'incbc', name:'Incline DB Curl',      sets:'3×10',   muscle:'Biceps (stretch)'},
+  ],
+  'Core & Abs': [
+    {id:'plank', name:'Plank',                sets:'3×60s',  muscle:'Core'},
+    {id:'splnk', name:'Side Plank',           sets:'3×30s',  muscle:'Obliques'},
+    {id:'crch',  name:'Crunches',             sets:'3×20',   muscle:'Abs'},
+    {id:'legr',  name:'Hanging Leg Raise',    sets:'3×12',   muscle:'Lower Abs'},
+    {id:'abwhl', name:'Ab Wheel Rollout',     sets:'3×10',   muscle:'Core'},
+    {id:'russ',  name:'Russian Twist',        sets:'3×20',   muscle:'Obliques'},
+    {id:'dbug',  name:'Dead Bug',             sets:'3×10',   muscle:'Deep Core'},
+    {id:'ccrch', name:'Cable Crunch',         sets:'3×15',   muscle:'Abs'},
+    {id:'mtnc',  name:'Mountain Climbers',    sets:'3×30s',  muscle:'Core / Cardio'},
+  ],
+  'Triceps': [
+    {id:'trext', name:'Cable Tricep Pushdown',sets:'4×12',   muscle:'Triceps'},
+    {id:'skull', name:'Skull Crushers',       sets:'3×10',   muscle:'Triceps'},
+    {id:'otri',  name:'Overhead Tricep Ext.', sets:'3×12',   muscle:'Triceps (long head)'},
+    {id:'kback', name:'Kickbacks',            sets:'3×12',   muscle:'Triceps'},
+    {id:'cdip',  name:'Close-Grip Bench',     sets:'3×10',   muscle:'Triceps / Chest'},
+  ],
+  'Body Shaping': [
+    {id:'abtwst',name:'Standing Ab Twist',    sets:'3×20',   muscle:'Waist / Obliques'},
+    {id:'hipbc', name:'Hip Bridge',           sets:'3×20',   muscle:'Glutes'},
+    {id:'gkick', name:'Glute Kickbacks',      sets:'4×15',   muscle:'Glutes'},
+    {id:'donky', name:'Donkey Kicks',         sets:'4×15',   muscle:'Glutes'},
+    {id:'sleg',  name:'Side-Lying Leg Raise', sets:'3×15',   muscle:'Outer Thighs'},
+    {id:'hcirc', name:'Hip Circles',          sets:'3×20',   muscle:'Hips / Waist'},
+    {id:'fireb', name:'Fire Hydrant',         sets:'3×15',   muscle:'Glutes / Hips'},
+    {id:'plie',  name:'Plié Squat',           sets:'3×15',   muscle:'Inner Thighs'},
+  ],
+  'Cardio & Conditioning': [
+    {id:'tmill', name:'Treadmill Run',         sets:'30 min', muscle:'Cardiovascular'},
+    {id:'incwk', name:'Incline Walk',          sets:'20 min', muscle:'Glutes / Cardio'},
+    {id:'jrope', name:'Jump Rope',             sets:'3×5 min',muscle:'Cardiovascular'},
+    {id:'sbike', name:'Stationary Bike',       sets:'20 min', muscle:'Cardiovascular'},
+    {id:'rowr',  name:'Rowing Machine',        sets:'15 min', muscle:'Full Body / Cardio'},
+    {id:'burp',  name:'Burpees',               sets:'4×10',   muscle:'Full Body'},
+    {id:'hiit',  name:'HIIT Intervals',        sets:'4×3 min',muscle:'Full Body'},
+    {id:'sled',  name:'Sled Push',             sets:'6×20m',  muscle:'Legs / Cardio'},
+  ],
+};
+
+/* ─── Helpers ─── */
+const ls = {
+  get: (k,d) => { try { const v=localStorage.getItem(k); return v?JSON.parse(v):d; } catch { return d; } },
+  set: (k,v) => { try { localStorage.setItem(k,JSON.stringify(v)); } catch {} },
+};
+
+/* Week key = ISO date string of that week's Sunday */
+const getWeekSunday = (offset=0) => {
+  const d = new Date(); d.setHours(0,0,0,0);
+  d.setDate(d.getDate() - d.getDay() + offset*7);
+  return d.toISOString().split('T')[0];
+};
+
+/* Returns array of 7 date strings [Sun..Sat] for a given week key */
+const getWeekDates = (weekKey) => {
+  const sun = new Date(weekKey+'T00:00:00');
+  return DAYS.map((_,i) => { const d=new Date(sun); d.setDate(d.getDate()+i); return d.toISOString().split('T')[0]; });
+};
+
+const fmtDate = (dateKey) => new Date(dateKey+'T00:00:00').toLocaleDateString('en',{month:'short',day:'numeric',year:'numeric'});
+
+const formatWeekLabel = (weekKey, offset) => {
+  if (offset===0) return 'This Week';
+  if (offset===-1) return 'Last Week';
+  const sun = new Date(weekKey+'T00:00:00');
+  const sat = new Date(sun); sat.setDate(sat.getDate()+6);
+  const fmt = d => d.toLocaleDateString('en',{month:'short',day:'numeric'});
+  return `${fmt(sun)} – ${fmt(sat)}`;
+};
+
+/* Heatmap */
+const getLast52Weeks = () => {
+  const weeks=[], today=new Date(); today.setHours(0,0,0,0);
+  const sun=new Date(today); sun.setDate(sun.getDate()-sun.getDay());
+  for (let w=51; w>=0; w--) {
+    const week=[];
+    for (let d=0; d<7; d++) { const dt=new Date(sun); dt.setDate(dt.getDate()-w*7+d); week.push(dt.toISOString().split('T')[0]); }
+    weeks.push(week);
+  }
+  return weeks;
+};
+
+/* Weight key: per person + exercise */
+const wKey = (uid, exId) => `${uid}_${exId}`;
+
+/* ─── DragHandle ─── */
+function DragHandle() {
+  return (
+    <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" style={{opacity:.28,flexShrink:0}}>
+      <circle cx="3" cy="2.5"  r="1.2"/><circle cx="7" cy="2.5"  r="1.2"/>
+      <circle cx="3" cy="7"    r="1.2"/><circle cx="7" cy="7"    r="1.2"/>
+      <circle cx="3" cy="11.5" r="1.2"/><circle cx="7" cy="11.5" r="1.2"/>
+    </svg>
+  );
+}
+
+/* ─── WeightBadge ─── */
+function WeightBadge({ uid, exId, weights, setWeights, color }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal]         = useState('');
+  const ref = useRef(null);
+  const key    = wKey(uid, exId);
+  const stored = weights[key];
+
+  const open = e => { e.stopPropagation(); setVal(stored?.weight||''); setEditing(true); setTimeout(()=>ref.current?.focus(),30); };
+  const save = () => {
+    const t = val.trim();
+    setWeights(p => ({ ...p, [key]: t ? {weight:t, date:new Date().toISOString().split('T')[0]} : undefined }));
+    setEditing(false);
+  };
+
+  if (editing) return (
+    <input ref={ref} className="weight-input" value={val}
+      onChange={e=>setVal(e.target.value)} onBlur={save}
+      onKeyDown={e=>{ if(e.key==='Enter'||e.key==='Escape') save(); e.stopPropagation(); }}
+      placeholder="e.g. 60 kg" onClick={e=>e.stopPropagation()}
+      style={{width:72,padding:'2px 5px',fontSize:10,borderRadius:4,border:`1px solid ${color.border}`,background:'white',color:color.text,fontFamily:'DM Sans,sans-serif'}}
+    />
+  );
+
+  return stored?.weight ? (
+    <div onClick={open} title={`Logged ${stored.date} · click to update`}
+      style={{display:'flex',alignItems:'center',gap:3,padding:'2px 7px',borderRadius:10,background:`${color.main}18`,border:`1px solid ${color.border}`,cursor:'pointer',flexShrink:0}}>
+      <svg width="8" height="10" viewBox="0 0 8 10" fill={color.main} style={{opacity:.7}}>
+        <rect x="1" y="4" width="6" height="6" rx="1"/>
+        <path d="M2 4V3a2 2 0 014 0v1" stroke={color.main} strokeWidth="1.2" fill="none"/>
+      </svg>
+      <span style={{fontSize:10,fontWeight:600,color:color.text}}>{stored.weight}</span>
+    </div>
+  ) : (
+    <div onClick={open} title="Log weight"
+      style={{padding:'2px 7px',borderRadius:10,cursor:'pointer',border:`1px dashed ${color.border}`,fontSize:10,color:color.text,opacity:0.5}}>
+      + weight
+    </div>
+  );
+}
+
+/* ─── Habit Heatmap ─── */
+function HabitHeatmap({ history }) {
+  const weeks    = useMemo(() => getLast52Weeks(), []);
+  const todayKey = new Date().toISOString().split('T')[0];
+  const maxCount = useMemo(() => Math.max(1,...Object.values(history).map(h=>h.count||0)), [history]);
+
+  const cellColor = dk => {
+    if (dk > todayKey) return '#F0F2F8';
+    const h=history[dk]; if(!h||!h.count) return '#E9EDF5';
+    const r=Math.min(h.count/Math.max(maxCount,6),1);
+    if(r<0.2) return '#BBF7D0'; if(r<0.45) return '#4ADE80';
+    if(r<0.7) return '#16A34A'; return '#166534';
+  };
+
+  const months=[];
+  weeks.forEach((week,wi)=>{
+    const mo=new Date(week[0]).toLocaleString('en',{month:'short'});
+    if(wi===0||mo!==months[months.length-1]?.label) months.push({label:mo,col:wi});
+  });
+
+  return (
+    <div style={{overflowX:'auto'}}>
+      <div style={{display:'flex',marginBottom:4}}>
+        <div style={{width:18,flexShrink:0}}/>
+        <div style={{height:14,position:'relative',flex:1,minWidth:`${weeks.length*13}px`}}>
+          {months.map((m,i)=>(
+            <span key={i} style={{position:'absolute',left:`${m.col*13}px`,fontSize:10,color:'#9CA3AF',fontWeight:500,whiteSpace:'nowrap'}}>{m.label}</span>
+          ))}
+        </div>
+      </div>
+      <div style={{display:'flex',gap:2,alignItems:'flex-start'}}>
+        <div style={{display:'flex',flexDirection:'column',gap:2,marginRight:4}}>
+          {['S','M','T','W','T','F','S'].map((d,i)=>(
+            <div key={i} style={{height:11,fontSize:9,color:'#9CA3AF',lineHeight:'11px',width:14,textAlign:'right'}}>{i%2===1?d:''}</div>
+          ))}
+        </div>
+        {weeks.map((week,wi)=>(
+          <div key={wi} style={{display:'flex',flexDirection:'column',gap:2}}>
+            {week.map(dk=>{
+              const h=history[dk]; const count=h?.count||0; const isToday=dk===todayKey;
+              return (
+                <div key={dk} className="heat-cell"
+                  title={count ? `${fmtDate(dk)} · ${count} exercise${count!==1?'s':''} logged` : fmtDate(dk)}
+                  style={{width:11,height:11,background:cellColor(dk),borderRadius:2,outline:isToday?'2px solid #2563EB':'none',outlineOffset:1}}
+                />
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:5,marginTop:8,justifyContent:'flex-end'}}>
+        <span style={{fontSize:10,color:'#9CA3AF'}}>Less</span>
+        {['#E9EDF5','#BBF7D0','#4ADE80','#16A34A','#166534'].map((c,i)=>(
+          <div key={i} style={{width:11,height:11,borderRadius:2,background:c}}/>
+        ))}
+        <span style={{fontSize:10,color:'#9CA3AF'}}>More</span>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Muscle Balance Card ─── */
+function MuscleBalance({ plan, users, restDays }) {
+  const coverage = useMemo(() => {
+    const result = {};
+    users.forEach(u => {
+      const covered = new Set();
+      DAYS.forEach(day => {
+        if (restDays[day]?.[u.id] || restDays[day]?.ALL) return;
+        (plan[day]?.[u.id] || []).forEach(item => {
+          detectGroup(item.exercise).forEach(g => covered.add(g.label));
+        });
+      });
+      result[u.id] = covered;
+    });
+    return result;
+  }, [plan, users, restDays]);
+
+  const anyPlanned = users.some(u => DAYS.some(d => (plan[d]?.[u.id]||[]).length > 0));
+  if (!anyPlanned) return null;
+
+  return (
+    <div style={{marginTop:16,background:'white',borderRadius:12,border:'1px solid #E5E7EB',overflow:'hidden',boxShadow:'0 1px 4px rgba(0,0,0,0.04)'}}>
+      <div style={{padding:'12px 18px 10px',borderBottom:'1px solid #F3F4F6',display:'flex',alignItems:'baseline',gap:10}}>
+        <span style={{fontSize:13,fontWeight:700,color:'#111827',letterSpacing:'-0.2px'}}>Muscle Coverage</span>
+        <span style={{fontSize:11,color:'#9CA3AF'}}>based on this week's plan</span>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:`repeat(${users.length},1fr)`,gap:0}}>
+        {users.map((u,i) => {
+          const c       = COLORS[u.ci%COLORS.length];
+          const covered = coverage[u.id];
+          return (
+            <div key={u.id} style={{padding:'14px 18px',borderRight:i<users.length-1?'1px solid #F3F4F6':'none'}}>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:10}}>
+                <div style={{width:24,height:24,borderRadius:'50%',background:`${c.main}18`,border:`2px solid ${c.main}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:c.main}}>
+                  {u.name.charAt(0).toUpperCase()}
+                </div>
+                <span style={{fontSize:13,fontWeight:600,color:'#374151'}}>{u.name}</span>
+              </div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+                {MUSCLE_GROUPS.map(g => {
+                  const hit = covered.has(g.label);
+                  return (
+                    <div key={g.label} title={hit?`${g.label} — covered ✓`:`${g.label} — not scheduled this week`}
+                      style={{
+                        display:'flex',alignItems:'center',gap:4,
+                        padding:'3px 9px',borderRadius:20,fontSize:11,fontWeight:600,
+                        background: hit ? g.bg : '#F9FAFB',
+                        color:      hit ? g.color : '#C4C9D4',
+                        border:    `1.5px solid ${hit ? g.color+'40' : '#E5E7EB'}`,
+                        transition:'all 0.15s',
+                      }}
+                    >
+                      <div style={{width:5,height:5,borderRadius:'50%',background:hit?g.color:'#D1D5DB',flexShrink:0}}/>
+                      {g.label}
+                    </div>
+                  );
+                })}
+              </div>
+              {covered.size===0 && (
+                <div style={{fontSize:11,color:'#D1D5DB',marginTop:4}}>No exercises planned yet</div>
+              )}
+              {covered.size>0 && covered.size<MUSCLE_GROUPS.length && (
+                <div style={{fontSize:10,color:'#9CA3AF',marginTop:8}}>
+                  Missing: {MUSCLE_GROUPS.filter(g=>!covered.has(g.label)).map(g=>g.label).join(', ')}
+                </div>
+              )}
+              {covered.size===MUSCLE_GROUPS.length && (
+                <div style={{fontSize:10,color:'#16A34A',fontWeight:600,marginTop:8}}>✓ Full body covered!</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════ MAIN APP ═══════════════ */
+function App() {
+  const [sideOpen,     setSideOpen]     = useState(true);
+  const [weekOffset,   setWeekOffset]   = useState(0);
+  const [users,        setUsers]        = useState(() => ls.get('gs-users',   [{id:'1',name:'You',ci:0},{id:'2',name:'GF',ci:1}]));
+  const [custom,       setCustom]       = useState(() => ls.get('gs-custom',  {}));
+  const [plansByWeek,  setPlansByWeek]  = useState(() => {
+    const existing = ls.get('gs-plans', null);
+    if (existing) return existing;
+    // Migrate from old single-week key
+    const old = ls.get('gs-plan', {});
+    return { [getWeekSunday(0)]: old };
+  });
+  const [restByWeek,   setRestByWeek]   = useState(() => ls.get('gs-rest',    {}));
+  const [weights,      setWeights]      = useState(() => ls.get('gs-weights', {}));
+  const [history,      setHistory]      = useState(() => ls.get('gs-history', {}));
+  const [remarks,      setRemarks]      = useState(() => ls.get('gs-remarks', ''));
+  const [cat,          setCat]          = useState('Legs');
+  const [drag,         setDrag]         = useState(null);
+  const [dropCell,     setDropCell]     = useState(null);
+  const [addingUser,   setAddingUser]   = useState(false);
+  const [newUserName,  setNewUserName]  = useState('');
+  const [showAddEx,    setShowAddEx]    = useState(false);
+  const [newEx,        setNewEx]        = useState({name:'',sets:'',muscle:'',cat:''});
+  const [newCatInput,  setNewCatInput]  = useState('');
+  const [justDone,     setJustDone]     = useState({});
+  const [appTitle,     setAppTitle]     = useState(() => ls.get('gs-title', 'GymSync'));
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft,   setTitleDraft]   = useState('');
+  const titleRef = useRef(null);
+
+  /* Persist */
+  useEffect(() => ls.set('gs-users',   users),       [users]);
+  useEffect(() => ls.set('gs-custom',  custom),      [custom]);
+  useEffect(() => ls.set('gs-plans',   plansByWeek), [plansByWeek]);
+  useEffect(() => ls.set('gs-rest',    restByWeek),  [restByWeek]);
+  useEffect(() => ls.set('gs-weights', weights),     [weights]);
+  useEffect(() => ls.set('gs-history', history),     [history]);
+  useEffect(() => ls.set('gs-remarks', remarks),     [remarks]);
+  useEffect(() => ls.set('gs-title',   appTitle),    [appTitle]);
+  useEffect(() => { document.title = appTitle + ' — Workout Planner'; }, [appTitle]);
+
+  /* Current week derived state */
+  const currentWeekKey = useMemo(() => getWeekSunday(weekOffset), [weekOffset]);
+  const weekDates      = useMemo(() => getWeekDates(currentWeekKey), [currentWeekKey]);
+  const plan           = useMemo(() => plansByWeek[currentWeekKey] || {}, [plansByWeek, currentWeekKey]);
+  const restDays       = useMemo(() => restByWeek[currentWeekKey]  || {}, [restByWeek, currentWeekKey]);
+
+  /* Plan & rest setters — scoped to current week */
+  const setPlan = updater => setPlansByWeek(p => {
+    const cur = p[currentWeekKey] || {};
+    return { ...p, [currentWeekKey]: typeof updater==='function' ? updater(cur) : updater };
+  });
+  const setRestDays = updater => setRestByWeek(p => {
+    const cur = p[currentWeekKey] || {};
+    return { ...p, [currentWeekKey]: typeof updater==='function' ? updater(cur) : updater };
+  });
+
+  /* Library */
+  const lib = useMemo(() => {
+    const m={};
+    Object.keys(DEFAULT_LIB).forEach(k=>{m[k]=[...DEFAULT_LIB[k]];});
+    Object.keys(custom).forEach(k=>{ if(!m[k]) m[k]=[]; m[k]=[...m[k],...custom[k]]; });
+    return m;
+  }, [custom]);
+  const cats = Object.keys(lib);
+
+  const userTotal = uid => DAYS.reduce((s,d)=>s+((plan[d]?.[uid])||[]).length, 0);
+  const weekTotal = DAYS.reduce((s,d)=>s+Object.values(plan[d]||{}).reduce((ss,a)=>ss+a.length,0), 0);
+  const totalHistoryDays = Object.values(history).filter(h=>h.count>0).length;
+
+  /* Mark done — uses actual calendar date for that day in the viewed week */
+  const markDone = (day) => {
+    const count = Object.values(plan[day]||{}).reduce((s,a)=>s+a.length,0);
+    if (!count) return;
+    const dayIdx  = DAYS.indexOf(day);
+    const dateKey = weekDates[dayIdx]; // ← real calendar date, not "today"
+    setHistory(p => ({
+      ...p,
+      [dateKey]: { count:(p[dateKey]?.count||0)+count, days:[...new Set([...(p[dateKey]?.days||[]),day])] },
+    }));
+    setJustDone(p=>({...p,[day]:true}));
+    setTimeout(()=>setJustDone(p=>{const n={...p};delete n[day];return n;}),1800);
+  };
+
+  /* Rest day toggles */
+  const toggleRest = (day, uid) => setRestDays(p => {
+    const d = {...(p[day]||{})};
+    if (d[uid]) delete d[uid]; else d[uid] = true;
+    return {...p, [day]: d};
+  });
+  const toggleRestAll = (day) => setRestDays(p => {
+    const d = p[day]||{};
+    const allSet = d.ALL;
+    if (allSet) { const n={...d}; delete n.ALL; return {...p,[day]:n}; }
+    return {...p, [day]: {...d, ALL:true}};
+  });
+
+  /* Users */
+  const addUser = () => {
+    if (!newUserName.trim()||users.length>=6) return;
+    const u={id:Date.now().toString(),name:newUserName.trim(),ci:users.length%COLORS.length};
+    setUsers(p=>[...p,u]); setNewUserName(''); setAddingUser(false);
+  };
+  const removeUser = uid => {
+    if (users.length<=1) return;
+    setUsers(p=>p.filter(u=>u.id!==uid));
+    setPlan(p=>{ const n={}; DAYS.forEach(d=>{const dd={...(p[d]||{})};delete dd[uid];n[d]=dd;}); return n; });
+  };
+
+  /* Custom exercises */
+  const saveEx = () => {
+    if (!newEx.name.trim()) return;
+    const isNew=newEx.cat==='__new__';
+    const target=isNew?(newCatInput.trim()||'Custom'):(newEx.cat||cat);
+    const ex={id:'c_'+Date.now(),name:newEx.name.trim(),sets:newEx.sets||'3×12',muscle:newEx.muscle||'Custom',custom:true};
+    setCustom(p=>({...p,[target]:[...(p[target]||[]),ex]}));
+    setNewEx({name:'',sets:'',muscle:'',cat:''}); setNewCatInput('');
+    setShowAddEx(false); setCat(target);
+  };
+  const deleteCustomEx = (ck,eid) => setCustom(p=>({...p,[ck]:(p[ck]||[]).filter(e=>e.id!==eid)}));
+
+  /* Drag & Drop */
+  const handleDrop = (day, uid) => {
+    if (!drag) return;
+    setPlan(p => {
+      const n=JSON.parse(JSON.stringify(p));
+      if (drag.type==='cell'&&n[drag.fromDay]?.[drag.fromUid])
+        n[drag.fromDay][drag.fromUid].splice(drag.fromIdx,1);
+      if (!n[day]) n[day]={};
+      if (!n[day][uid]) n[day][uid]=[];
+      if (drag.type==='category') {
+        const ex=new Set(n[day][uid].map(i=>i.exercise.name));
+        drag.exercises.forEach(e=>{ if(!ex.has(e.name)) n[day][uid].push({id:String(Date.now()+Math.random()),exercise:e}); });
+      } else {
+        n[day][uid].push({id:String(Date.now()),exercise:drag.exercise});
+      }
+      return n;
+    });
+    setDrag(null); setDropCell(null);
+  };
+  const handleDragLeave = e => { if(!e.currentTarget.contains(e.relatedTarget)) setDropCell(null); };
+  const delItem  = (day,uid,idx) => setPlan(p=>{ const n=JSON.parse(JSON.stringify(p)); n[day]?.[uid]?.splice(idx,1); return n; });
+  const clearDay = day => setPlan(p=>({...p,[day]:{}}));
+
+  /* ══════════════════ RENDER ══════════════════ */
+  return (
+    <div style={{display:'flex',flexDirection:'column',height:'100vh',overflow:'hidden'}}>
+
+      {/* ─── HEADER ─── */}
+      <header style={{background:'#fff',height:58,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 20px',borderBottom:'1px solid #E5E7EB',boxShadow:'0 1px 4px rgba(0,0,0,0.05)',zIndex:20}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          {/* Burger */}
+          <button className={`burger${sideOpen?' is-open':''}`} onClick={()=>setSideOpen(o=>!o)} title={sideOpen?'Collapse library':'Expand library'}>
+            {sideOpen
+              ? <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="#374151" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              : <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <line x1="2" y1="4.5"  x2="14" y2="4.5"  stroke="#374151" strokeWidth="1.75" strokeLinecap="round"/>
+                  <line x1="2" y1="8"    x2="14" y2="8"    stroke="#374151" strokeWidth="1.75" strokeLinecap="round"/>
+                  <line x1="2" y1="11.5" x2="14" y2="11.5" stroke="#374151" strokeWidth="1.75" strokeLinecap="round"/>
+                </svg>
+            }
+          </button>
+          <div style={{width:34,height:34,borderRadius:9,background:'#2563EB',display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontWeight:700,fontSize:16,boxShadow:'0 2px 8px rgba(37,99,235,0.3)'}}>
+            {appTitle.charAt(0).toUpperCase() || 'G'}
+          </div>
+          <div>
+            {editingTitle ? (
+              <input
+                ref={titleRef}
+                value={titleDraft}
+                onChange={e => setTitleDraft(e.target.value)}
+                onBlur={() => { const t=titleDraft.trim(); setAppTitle(t||'GymSync'); setEditingTitle(false); }}
+                onKeyDown={e => {
+                  if (e.key==='Enter') { const t=titleDraft.trim(); setAppTitle(t||'GymSync'); setEditingTitle(false); }
+                  if (e.key==='Escape') setEditingTitle(false);
+                }}
+                style={{fontWeight:700,fontSize:16,letterSpacing:'-0.4px',lineHeight:1,border:'none',borderBottom:'2px solid #2563EB',outline:'none',padding:'0 2px',background:'transparent',color:'#111827',width:160}}
+              />
+            ) : (
+              <div
+                onClick={() => { setTitleDraft(appTitle); setEditingTitle(true); setTimeout(()=>{ titleRef.current?.focus(); titleRef.current?.select(); },20); }}
+                title="Click to rename"
+                style={{fontWeight:700,fontSize:16,letterSpacing:'-0.4px',lineHeight:1,cursor:'text',display:'flex',alignItems:'center',gap:5}}
+              >
+                {appTitle}
+                <svg width="11" height="11" viewBox="0 0 11 11" fill="none" style={{opacity:0.25,flexShrink:0}}>
+                  <path d="M7.5 1.5l2 2L3 10H1V8L7.5 1.5z" stroke="#374151" strokeWidth="1.2" strokeLinejoin="round"/>
+                </svg>
+              </div>
+            )}
+            <div style={{fontSize:11,color:'#9CA3AF',marginTop:2}}>
+              {weekTotal} planned · <span style={{color:'#16A34A',fontWeight:600}}>{totalHistoryDays}</span> days logged all time
+            </div>
+          </div>
+        </div>
+
+        {/* Users */}
+        <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+          {users.map(u=>{
+            const c=COLORS[u.ci%COLORS.length];
+            return (
+              <div key={u.id} style={{display:'flex',alignItems:'center',gap:5,padding:'5px 12px',borderRadius:20,background:c.bg,border:`1.5px solid ${c.border}`,fontSize:13,fontWeight:600,color:c.text}}>
+                <span style={{width:7,height:7,borderRadius:'50%',background:c.main}}/>
+                {u.name}
+                {users.length>1&&<button onClick={()=>removeUser(u.id)} style={{background:'none',border:'none',padding:'0 0 0 2px',fontSize:14,color:c.text,opacity:0.4,lineHeight:1,cursor:'pointer',marginLeft:1}}>×</button>}
+              </div>
+            );
+          })}
+          {users.length<6&&(
+            addingUser?(
+              <div style={{display:'flex',gap:4,alignItems:'center'}}>
+                <input value={newUserName} onChange={e=>setNewUserName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addUser()} placeholder="Name…" autoFocus style={{width:85,padding:'5px 10px',border:'1px solid #D1D5DB',borderRadius:20,fontSize:13}}/>
+                <button onClick={addUser} style={{padding:'5px 13px',background:'#2563EB',color:'white',border:'none',borderRadius:20,fontSize:13,fontWeight:600}}>Add</button>
+                <button onClick={()=>setAddingUser(false)} style={{padding:'5px 10px',border:'1px solid #D1D5DB',borderRadius:20,background:'white',fontSize:13}}>✕</button>
+              </div>
+            ):(
+              <button onClick={()=>setAddingUser(true)} style={{padding:'5px 13px',border:'1.5px dashed #D1D5DB',borderRadius:20,background:'transparent',color:'#9CA3AF',fontSize:13}}>+ Add person</button>
+            )
+          )}
+        </div>
+      </header>
+
+      {/* ─── BODY ─── */}
+      <div style={{flex:1,display:'flex',overflow:'hidden'}}>
+
+        {/* ─── SIDEBAR ─── */}
+        <div className="sidebar-wrap" style={{width:sideOpen?222:0,minWidth:sideOpen?222:0}}>
+          <div className="sidebar-inner">
+            <div style={{padding:'13px 14px 9px',borderBottom:'1px solid #F3F4F6',flexShrink:0}}>
+              <p style={{fontSize:10,fontWeight:700,letterSpacing:'1.2px',color:'#9CA3AF',textTransform:'uppercase',margin:'0 0 3px'}}>Exercise Library</p>
+              <p style={{fontSize:10,color:'#C4C9D4',margin:0,lineHeight:1.4}}>Drag category or exercise to any cell</p>
+            </div>
+            <div style={{padding:'6px',borderBottom:'1px solid #F3F4F6',flexShrink:0}}>
+              {cats.map(c=>(
+                <div key={c} draggable
+                  onDragStart={()=>setDrag({type:'category',catName:c,exercises:lib[c]})}
+                  onDragEnd={()=>setDrag(null)}
+                  onClick={()=>setCat(c)}
+                  className="cat-row"
+                  style={{display:'flex',alignItems:'center',gap:7,padding:'7px 8px',borderRadius:8,marginBottom:1,border:'1px solid transparent',background:cat===c?'#EFF6FF':'transparent',color:cat===c?'#1D4ED8':'#374151',userSelect:'none'}}
+                >
+                  <DragHandle/>
+                  <span style={{flex:1,fontSize:13,fontWeight:cat===c?600:400,lineHeight:1.3}}>{c}</span>
+                  <span style={{fontSize:10,color:cat===c?'#93C5FD':'#C4C9D4',fontWeight:500,flexShrink:0}}>{lib[c].length}</span>
+                  {custom[c]?.length>0&&<span style={{fontSize:9,background:'#EDE9FE',color:'#6D28D9',padding:'1px 5px',borderRadius:5,fontWeight:600}}>+{custom[c].length}</span>}
+                </div>
+              ))}
+            </div>
+            <div style={{flex:1,overflowY:'auto',padding:'6px'}}>
+              <div style={{fontSize:10,color:'#B0B8C8',padding:'4px 4px 6px',fontWeight:600,letterSpacing:'0.4px'}}>{cat} · {lib[cat]?.length}</div>
+              {(lib[cat]||[]).map(ex=>(
+                <div key={ex.id} draggable
+                  onDragStart={()=>setDrag({type:'lib',exercise:ex})}
+                  onDragEnd={()=>setDrag(null)}
+                  className="lib-card ex-card"
+                  style={{padding:'9px 10px',marginBottom:4,borderRadius:8,border:`1px solid ${ex.custom?'#DDD6FE':'#E9EDF5'}`,background:ex.custom?'#FAF9FF':'#F8FAFC',cursor:'grab',userSelect:'none',position:'relative'}}
+                >
+                  {ex.custom&&<button onClick={()=>deleteCustomEx(cat,ex.id)} style={{position:'absolute',top:4,right:6,background:'none',border:'none',fontSize:12,color:'#9CA3AF',cursor:'pointer',lineHeight:1,padding:0}}>×</button>}
+                  <div style={{fontSize:12,fontWeight:500,color:'#111827',paddingRight:ex.custom?12:0,lineHeight:1.3}}>{ex.name}</div>
+                  <div style={{fontSize:10,color:'#9CA3AF',marginTop:2}}>{ex.sets} · {ex.muscle}</div>
+                  {ex.custom&&<div style={{fontSize:9,color:'#7C3AED',marginTop:2,fontWeight:600,letterSpacing:'0.4px'}}>CUSTOM</div>}
+                </div>
+              ))}
+            </div>
+            <div style={{padding:'10px 10px 14px',borderTop:'1px solid #F3F4F6',flexShrink:0}}>
+              {!showAddEx?(
+                <button onClick={()=>setShowAddEx(true)} style={{width:'100%',padding:'8px',borderRadius:8,border:'1.5px dashed #D1D5DB',background:'transparent',color:'#6B7280',fontSize:12,display:'flex',alignItems:'center',justifyContent:'center',gap:5}}>
+                  <span style={{fontSize:16,lineHeight:1}}>+</span> Add Exercise
+                </button>
+              ):(
+                <div style={{display:'flex',flexDirection:'column',gap:5}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:2}}>
+                    <span style={{fontSize:11,fontWeight:600,color:'#374151'}}>New Exercise</span>
+                    <button onClick={()=>{setShowAddEx(false);setNewEx({name:'',sets:'',muscle:'',cat:''});setNewCatInput('');}} style={{background:'none',border:'none',fontSize:15,color:'#9CA3AF',cursor:'pointer',lineHeight:1}}>×</button>
+                  </div>
+                  <input value={newEx.name} onChange={e=>setNewEx(p=>({...p,name:e.target.value}))} onKeyDown={e=>e.key==='Enter'&&saveEx()} placeholder="Exercise name *" style={{padding:'6px 9px',border:'1px solid #D1D5DB',borderRadius:7,fontSize:12}}/>
+                  <input value={newEx.sets} onChange={e=>setNewEx(p=>({...p,sets:e.target.value}))} placeholder="Sets (e.g. 3×12)" style={{padding:'6px 9px',border:'1px solid #D1D5DB',borderRadius:7,fontSize:12}}/>
+                  <input value={newEx.muscle} onChange={e=>setNewEx(p=>({...p,muscle:e.target.value}))} placeholder="Muscle group" style={{padding:'6px 9px',border:'1px solid #D1D5DB',borderRadius:7,fontSize:12}}/>
+                  <select value={newEx.cat||cat} onChange={e=>setNewEx(p=>({...p,cat:e.target.value}))} style={{padding:'6px 9px',border:'1px solid #D1D5DB',borderRadius:7,fontSize:12,background:'white',cursor:'pointer'}}>
+                    {cats.map(c=><option key={c} value={c}>{c}</option>)}
+                    <option value="__new__">+ New category…</option>
+                  </select>
+                  {newEx.cat==='__new__'&&<input value={newCatInput} onChange={e=>setNewCatInput(e.target.value)} placeholder="Category name…" autoFocus style={{padding:'6px 9px',border:'1px solid #A5B4FC',borderRadius:7,fontSize:12,background:'#EEF2FF'}}/>}
+                  <button onClick={saveEx} style={{padding:'8px',background:'#2563EB',color:'white',border:'none',borderRadius:7,fontSize:12,fontWeight:600,cursor:'pointer',marginTop:2}}>Save Exercise</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ─── MAIN BOARD ─── */}
+        <main style={{flex:1,overflow:'auto',padding:'16px 22px 32px'}}>
+
+          {/* Week navigation */}
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
+            <button className="week-nav-btn" onClick={()=>setWeekOffset(o=>o-1)} title="Previous week">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M7.5 2L4 6l3.5 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
+            <div style={{fontSize:13,fontWeight:600,color:'#374151',minWidth:130,textAlign:'center'}}>
+              {formatWeekLabel(currentWeekKey, weekOffset)}
+            </div>
+            <button className="week-nav-btn" onClick={()=>setWeekOffset(o=>o+1)} disabled={weekOffset>=0} title="Next week">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M4.5 2L8 6l-3.5 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
+            {weekOffset!==0&&(
+              <button onClick={()=>setWeekOffset(0)} style={{padding:'4px 10px',border:'1px solid #E5E7EB',borderRadius:7,background:'white',fontSize:11,color:'#6B7280',marginLeft:2}}>
+                Today
+              </button>
+            )}
+            <div style={{flex:1}}/>
+            <div style={{fontSize:11,color:'#C4C9D4'}}>
+              {weekDates[0]} → {weekDates[6]}
+            </div>
+          </div>
+
+          {/* Board */}
+          <div style={{background:'white',borderRadius:14,border:'1px solid #E5E7EB',overflow:'hidden',boxShadow:'0 1px 6px rgba(0,0,0,0.05)',minWidth:`${140+users.length*220}px`}}>
+
+            {/* Header */}
+            <div style={{display:'grid',gridTemplateColumns:`140px repeat(${users.length},minmax(220px,1fr))`,background:'#F8FAFC',borderBottom:'2px solid #E5E7EB'}}>
+              <div style={{padding:'14px 16px',borderRight:'1px solid #E5E7EB',display:'flex',alignItems:'center'}}>
+                <span style={{fontSize:10,fontWeight:700,color:'#9CA3AF',textTransform:'uppercase',letterSpacing:'0.8px'}}>Days</span>
+              </div>
+              {users.map((u,i)=>{
+                const c=COLORS[u.ci%COLORS.length];
+                return (
+                  <div key={u.id} style={{padding:'12px 18px',borderRight:i<users.length-1?'1px solid #E5E7EB':'none',display:'flex',alignItems:'center',gap:11}}>
+                    <div style={{width:38,height:38,borderRadius:'50%',background:`${c.main}18`,border:`2.5px solid ${c.main}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,color:c.main,flexShrink:0}}>{u.name.charAt(0).toUpperCase()}</div>
+                    <div>
+                      <div style={{fontSize:15,fontWeight:700,color:'#111827',lineHeight:1}}>{u.name}</div>
+                      <div style={{fontSize:11,color:'#9CA3AF',marginTop:3}}><span style={{color:c.main,fontWeight:600}}>{userTotal(u.id)}</span> exercises this week</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Day rows */}
+            {DAYS.map((day,di)=>{
+              const dayCount = Object.values(plan[day]||{}).reduce((s,a)=>s+a.length,0);
+              const done     = justDone[day];
+              const allRest  = restDays[day]?.ALL;
+              return (
+                <div key={day} className="day-row" style={{display:'grid',gridTemplateColumns:`140px repeat(${users.length},minmax(220px,1fr))`,borderBottom:di<DAYS.length-1?'1px solid #F0F2F8':'none'}}>
+
+                  {/* Day label */}
+                  <div style={{padding:'12px 14px 10px',borderRight:'1px solid #E5E7EB',background:allRest?'#F9FAFB':'#FAFBFD',display:'flex',flexDirection:'column',justifyContent:'space-between'}}>
+                    <div>
+                      <div style={{fontSize:16,fontWeight:700,lineHeight:1,color:day==='Sun'?'#DC2626':'#111827'}}>{day}</div>
+                      <div style={{fontSize:10,color:'#CBD5E1',marginTop:2}}>{DAY_LONG[di]}</div>
+                      <div style={{fontSize:10,color:'#C4C9D4',marginTop:1}}>{weekDates[di]?.slice(5).replace('-','/')}</div>
+                      {dayCount>0&&!allRest&&<div style={{fontSize:10,color:'#9CA3AF',marginTop:3}}>{dayCount} exercise{dayCount!==1?'s':''}</div>}
+                      {allRest&&<div style={{fontSize:10,color:'#9CA3AF',marginTop:3,fontStyle:'italic'}}>Rest day</div>}
+                    </div>
+                    <div className="row-actions" style={{display:'flex',flexDirection:'column',gap:4,marginTop:8}}>
+                      {/* Rest all toggle */}
+                      <button onClick={()=>toggleRestAll(day)}
+                        style={{padding:'3px 8px',borderRadius:6,border:`1px solid ${allRest?'#FCA5A5':'#E5E7EB'}`,background:allRest?'#FEF2F2':'white',color:allRest?'#DC2626':'#9CA3AF',fontSize:10,fontWeight:600,display:'flex',alignItems:'center',gap:4}}>
+                        <span style={{fontSize:12,lineHeight:1}}>🌙</span>
+                        {allRest?'Unset rest':'Rest all'}
+                      </button>
+                      {dayCount>0&&!allRest&&(
+                        <button className="done-btn" onClick={()=>markDone(day)}
+                          style={{padding:'3px 8px',borderRadius:6,border:'none',background:done?'#DCFCE7':'#F0FDF4',color:done?'#15803D':'#16A34A',fontSize:10,fontWeight:600,display:'flex',alignItems:'center',gap:3}}>
+                          {done?<span className="check-pop">✓ Logged!</span>:<>✓ Mark done</>}
+                        </button>
+                      )}
+                      <button onClick={()=>clearDay(day)}
+                        style={{fontSize:10,color:'#D1D5DB',background:'none',border:'none',cursor:'pointer',padding:0,textAlign:'left'}}
+                        onMouseEnter={e=>e.target.style.color='#6B7280'}
+                        onMouseLeave={e=>e.target.style.color='#D1D5DB'}>clear</button>
+                    </div>
+                  </div>
+
+                  {/* User cells */}
+                  {users.map((u,ui)=>{
+                    const c      = COLORS[u.ci%COLORS.length];
+                    const items  = plan[day]?.[u.id] || [];
+                    const isOver = dropCell?.day===day && dropCell?.uid===u.id;
+                    const isRest = allRest || restDays[day]?.[u.id];
+                    const isCat  = drag?.type==='category';
+
+                    return (
+                      <div key={u.id}
+                        className={`user-cell${isRest?' rest-day-bg':''}`}
+                        onDragOver={e=>{ if(!isRest){e.preventDefault();setDropCell({day,uid:u.id});} }}
+                        onDragLeave={handleDragLeave}
+                        onDrop={()=>!isRest&&handleDrop(day,u.id)}
+                        style={{padding:'8px',borderRight:ui<users.length-1?'1px solid #F0F2F8':'none',minHeight:86,background:isOver&&!isRest?`${c.main}0D`:undefined,transition:'background 0.12s',display:'flex',flexDirection:'column',gap:4,position:'relative'}}
+                      >
+                        {isRest ? (
+                          <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:4}}>
+                            <span style={{fontSize:16}}>🌙</span>
+                            <span style={{fontSize:10,color:'#C4C9D4',fontWeight:500}}>Rest</span>
+                          </div>
+                        ) : (
+                          <>
+                            {items.map((item,idx)=>(
+                              <div key={item.id} draggable
+                                onDragStart={()=>setDrag({type:'cell',exercise:item.exercise,fromDay:day,fromUid:u.id,fromIdx:idx})}
+                                onDragEnd={()=>setDrag(null)}
+                                className="ex-card"
+                                style={{padding:'7px 9px',borderRadius:8,background:c.bg,borderLeft:`3px solid ${c.main}`,cursor:'grab'}}
+                              >
+                                <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:4}}>
+                                  <div style={{flex:1}}>
+                                    <div style={{fontSize:12,fontWeight:600,color:c.text,lineHeight:1.3}}>{item.exercise.name}</div>
+                                    <div style={{fontSize:10,color:c.text,opacity:0.6,marginTop:1}}>{item.exercise.sets} · {item.exercise.muscle}</div>
+                                  </div>
+                                  <button onClick={()=>delItem(day,u.id,idx)} style={{background:'none',border:'none',cursor:'pointer',color:c.text,opacity:0.3,padding:0,fontSize:14,lineHeight:1,flexShrink:0}}>×</button>
+                                </div>
+                                <div style={{marginTop:5}}>
+                                  <WeightBadge uid={u.id} exId={item.exercise.id} weights={weights} setWeights={setWeights} color={c}/>
+                                </div>
+                              </div>
+                            ))}
+                            {isOver&&(
+                              <div className="drop-active" style={{padding:'8px',borderRadius:8,border:`2px dashed ${c.main}`,background:`${c.main}10`,textAlign:'center',fontSize:11,color:c.main,fontWeight:600}}>
+                                {isCat?`Add all ${drag.exercises.length} exercises`:'Drop here'}
+                              </div>
+                            )}
+                            {items.length===0&&!isOver&&<div style={{fontSize:11,color:'#E5E7EB',padding:'4px 2px'}}>—</div>}
+                          </>
+                        )}
+                        {/* Individual rest toggle */}
+                        {!allRest&&(
+                          <button className="rest-cell-btn" onClick={()=>toggleRest(day,u.id)}
+                            title={isRest?'Remove rest day':'Set as rest day for '+u.name}
+                            style={{position:'absolute',top:6,right:6,padding:'2px 6px',borderRadius:5,border:`1px solid ${isRest?'#FCA5A5':'#E5E7EB'}`,background:isRest?'#FEF2F2':'white',color:isRest?'#DC2626':'#9CA3AF',fontSize:9,fontWeight:600,cursor:'pointer'}}>
+                            {isRest?'✕ rest':'🌙'}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+
+            {/* Totals */}
+            <div style={{display:'grid',gridTemplateColumns:`140px repeat(${users.length},minmax(220px,1fr))`,background:'#F8FAFC',borderTop:'2px solid #E5E7EB'}}>
+              <div style={{padding:'12px 16px',borderRight:'1px solid #E5E7EB',display:'flex',alignItems:'center'}}>
+                <span style={{fontSize:10,fontWeight:700,color:'#9CA3AF',textTransform:'uppercase',letterSpacing:'0.8px'}}>Total</span>
+              </div>
+              {users.map((u,i)=>{
+                const c=COLORS[u.ci%COLORS.length];
+                return (
+                  <div key={u.id} style={{padding:'12px 18px',borderRight:i<users.length-1?'1px solid #E5E7EB':'none',display:'flex',alignItems:'center',gap:7}}>
+                    <span style={{fontSize:26,fontWeight:700,color:c.main,lineHeight:1}}>{userTotal(u.id)}</span>
+                    <span style={{fontSize:12,color:'#9CA3AF',lineHeight:1.4}}>exercises<br/>this week</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Muscle Balance */}
+          <MuscleBalance plan={plan} users={users} restDays={restDays}/>
+
+          {/* Habit Heatmap */}
+          <div style={{marginTop:16,background:'white',borderRadius:12,border:'1px solid #E5E7EB',padding:'18px 22px',boxShadow:'0 1px 4px rgba(0,0,0,0.04)'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+              <div>
+                <div style={{fontSize:14,fontWeight:700,color:'#111827',letterSpacing:'-0.3px'}}>Workout Habit</div>
+                <div style={{fontSize:11,color:'#9CA3AF',marginTop:2}}>
+                  <span style={{color:'#16A34A',fontWeight:600}}>{totalHistoryDays}</span> workout day{totalHistoryDays!==1?'s':''} logged
+                </div>
+              </div>
+              <div style={{fontSize:11,color:'#9CA3AF'}}>Hit <b style={{color:'#374151'}}>✓ Mark done</b> after each workout to log it</div>
+            </div>
+            <HabitHeatmap history={history}/>
+          </div>
+
+          {/* Remarks */}
+          <div style={{marginTop:16,background:'white',borderRadius:12,border:'1px solid #E5E7EB',overflow:'hidden',boxShadow:'0 1px 4px rgba(0,0,0,0.04)'}}>
+            <div style={{padding:'10px 18px',borderBottom:'1px solid #F3F4F6'}}>
+              <span style={{fontSize:10,fontWeight:700,color:'#9CA3AF',textTransform:'uppercase',letterSpacing:'1px'}}>Remarks</span>
+            </div>
+            <textarea value={remarks} onChange={e=>setRemarks(e.target.value)}
+              placeholder="Weekly notes, goals, or reminders…"
+              style={{width:'100%',minHeight:74,padding:'12px 18px',border:'none',resize:'vertical',fontSize:13,color:'#374151',lineHeight:1.7,background:'white',fontFamily:'DM Sans,system-ui,sans-serif'}}
+            />
+          </div>
+
+          <p style={{fontSize:11,color:'#B0B8C8',textAlign:'center',marginTop:14,lineHeight:1.9}}>
+            Drag <b style={{color:'#6B7280'}}>category</b> to fill a day · Drag <b style={{color:'#6B7280'}}>exercise</b> to schedule · <b style={{color:'#6B7280'}}>🌙</b> to set rest · <b style={{color:'#16A34A'}}>✓ Mark done</b> to log
+          </p>
+        </main>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
