@@ -23,8 +23,8 @@
     .cat-row         { transition:background 0.12s; cursor:grab; }
     .cat-row:hover   { background:#EFF6FF !important; }
     .cat-row:active  { cursor:grabbing; }
-    .ex-card         { transition:transform 0.1s; }
-    .ex-card:active  { transform:scale(0.97); }
+    .ex-card         { transition:box-shadow 0.1s; }
+    .ex-card.dragging { opacity:0.55; }
     .row-actions     { opacity:0; transition:opacity 0.15s; }
     .day-row:hover .row-actions { opacity:1; }
 
@@ -814,8 +814,8 @@ function App() {
                           <>
                             {items.map((item,idx)=>(
                               <div key={item.id} draggable
-                                onDragStart={()=>setDrag({type:'cell',exercise:item.exercise,fromDay:day,fromUid:u.id,fromIdx:idx})}
-                                onDragEnd={()=>setDrag(null)}
+                                onDragStart={e=>{ e.currentTarget.classList.add('dragging'); setDrag({type:'cell',exercise:item.exercise,fromDay:day,fromUid:u.id,fromIdx:idx}); }}
+                                onDragEnd={e=>{ e.currentTarget.classList.remove('dragging'); setDrag(null); }}
                                 className="ex-card"
                                 style={{padding:'7px 9px',borderRadius:8,background:c.bg,borderLeft:`3px solid ${c.main}`,cursor:'grab'}}
                               >
